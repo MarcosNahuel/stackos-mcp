@@ -1,0 +1,13 @@
+services:
+  stackos-mcp:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./knowledge-data:/data
+    environment:
+      - MCP_TRANSPORT=http
+      - PORT=3000
+      - STACKOS_ROOT=/data
+      - STACKOS_API_KEY=${STACKOS_API_KEY}
+    restart: unless-stopped
