@@ -12,9 +12,9 @@ Sistema de investigación técnica que mantiene documentación siempre actualiza
 
 **Sin RAG, sin vector DB** — búsqueda por keyword sobre archivos markdown.
 
-## Tools disponibles
+## Tools disponibles (12)
 
-### Lectura (6)
+### Lectura y búsqueda (6)
 
 | Tool | Descripción |
 |------|-------------|
@@ -25,6 +25,14 @@ Sistema de investigación técnica que mantiene documentación siempre actualiza
 | `leer_standard` | Lee un standard de calidad completo |
 | `obtener_contexto_global` | Resumen ejecutivo de toda la KB |
 
+### Skills y metodología (3)
+
+| Tool | Descripción |
+|------|-------------|
+| `leer_skill` | Lee el workflow completo de un skill (SKILL.md) |
+| `leer_metodologia` | Lee SDD-STACKOS, reglas universales o estándar de Engram |
+| `guia_aprendizaje` | Guía estructurada para alumnos (principiante/intermedio/avanzado) |
+
 ### Escritura (3)
 
 | Tool | Descripción |
@@ -32,6 +40,16 @@ Sistema de investigación técnica que mantiene documentación siempre actualiza
 | `registrar_leccion` | Registra lección aprendida (append-only) |
 | `agregar_nota_conocimiento` | Agrega nota a archivo de knowledge existente |
 | `proponer_evaluacion` | Propone herramienta para evaluar |
+
+## Para alumnos
+
+Si sos alumno y te compartieron este MCP, empezá así:
+
+1. **`guia_aprendizaje`** con nivel `"principiante"` — te da el roadmap completo
+2. **`leer_metodologia`** con `"sdd-stackos"` — la metodología que usamos
+3. **`listar_skills`** — para ver todas las automatizaciones disponibles
+4. **`leer_skill`** con `"wrap-up"` — tu primer skill (el más simple)
+5. **`buscar_evaluacion`** con cualquier herramienta — para ver cómo evaluamos tech
 
 ### Resources (8)
 

@@ -11,6 +11,11 @@ import { listarEvaluaciones } from "./tools/listar-evaluaciones.js";
 import { leerStandard } from "./tools/leer-standard.js";
 import { obtenerContextoGlobal } from "./tools/obtener-contexto-global.js";
 
+// Tools de skills y metodología
+import { leerSkill } from "./tools/leer-skill.js";
+import { leerMetodologia } from "./tools/leer-metodologia.js";
+import { guiaAprendizaje } from "./tools/guia-aprendizaje.js";
+
 // Tools de escritura
 import { registrarLeccion } from "./tools/registrar-leccion.js";
 import { agregarNota } from "./tools/agregar-nota.js";
@@ -120,6 +125,62 @@ async function main(): Promise<void> {
     async () => {
       try {
         const content = obtenerContextoGlobal(root);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  // --- Tools de skills y metodología ---
+
+  server.tool(
+    "leer_skill",
+    "Lee el contenido completo de un skill específico (su workflow, pasos, reglas y configuración). Usá listar_skills primero para ver cuáles hay.",
+    {
+      nombre: z
+        .string()
+        .describe('Nombre del skill (ej: "build-feature", "wrap-up", "investigar", "deploy")'),
+    },
+    async ({ nombre }) => {
+      try {
+        const content = leerSkill(root, nombre);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "leer_metodologia",
+    "Lee documentos clave de la metodología SDD-STACKOS: la metodología completa, las reglas universales, o el estándar de uso de memoria (Engram).",
+    {
+      documento: z
+        .enum(["sdd-stackos", "reglas-universales", "engram-usage"])
+        .describe("sdd-stackos = metodología completa | reglas-universales = 17 reglas que aplican siempre | engram-usage = cómo usar el sistema de memoria"),
+    },
+    async ({ documento }) => {
+      try {
+        const content = leerMetodologia(root, documento);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "guia_aprendizaje",
+    "Genera una guía de aprendizaje estructurada para alumnos nuevos. 3 niveles: principiante (conceptos + primeros pasos), intermedio (ciclo de desarrollo + Engram), avanzado (crear skills + arquitectura).",
+    {
+      nivel: z
+        .enum(["principiante", "intermedio", "avanzado"])
+        .describe("principiante = conceptos básicos | intermedio = ciclo completo | avanzado = extender el sistema"),
+    },
+    async ({ nivel }) => {
+      try {
+        const content = guiaAprendizaje(root, nivel);
         return { content: [{ type: "text", text: content }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
