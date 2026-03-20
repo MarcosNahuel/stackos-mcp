@@ -16,6 +16,12 @@ import { leerSkill } from "./tools/leer-skill.js";
 import { leerMetodologia } from "./tools/leer-metodologia.js";
 import { guiaAprendizaje } from "./tools/guia-aprendizaje.js";
 
+// Tools pedagógicos
+import { modoTutor } from "./tools/modo-tutor.js";
+import { explicarConcepto } from "./tools/explicar-concepto.js";
+import { ejercicioPractico } from "./tools/ejercicio-practico.js";
+import { evaluarRespuesta } from "./tools/evaluar-respuesta.js";
+
 // Tools de escritura
 import { registrarLeccion } from "./tools/registrar-leccion.js";
 import { agregarNota } from "./tools/agregar-nota.js";
@@ -181,6 +187,92 @@ async function main(): Promise<void> {
     async ({ nivel }) => {
       try {
         const content = guiaAprendizaje(root, nivel);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  // --- Tools pedagógicos ---
+
+  server.tool(
+    "modo_tutor",
+    "LLAMAR AL INICIO DE CADA SESIÓN DE ENSEÑANZA. Devuelve instrucciones pedagógicas que transforman al agente en un tutor de STACKOS. El agente debe seguir estas instrucciones durante toda la conversación.",
+    {
+      idioma: z
+        .enum(["es", "en"])
+        .default("es")
+        .describe("Idioma de las instrucciones: es (español) o en (inglés)"),
+    },
+    async ({ idioma }) => {
+      try {
+        const content = modoTutor(idioma);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "explicar_concepto",
+    "Explica un concepto de STACKOS de forma pedagógica con: contexto, analogía, concepto, ejemplo y pregunta de verificación. Adaptado al nivel del alumno. Conceptos: spec, skill, engram, quality-gate, lifecycle.",
+    {
+      concepto: z
+        .string()
+        .describe('Concepto a explicar: "spec", "skill", "engram", "quality-gate", "lifecycle"'),
+      nivel: z
+        .enum(["principiante", "intermedio", "avanzado"])
+        .default("principiante")
+        .describe("Nivel del alumno"),
+    },
+    async ({ concepto, nivel }) => {
+      try {
+        const content = explicarConcepto(concepto, nivel);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "ejercicio_practico",
+    "Genera un ejercicio práctico sobre un tema de STACKOS, adaptado al nivel del alumno. Incluye instrucciones, criterios de evaluación y formato esperado. Temas: spec, skill, engram, quality-gate.",
+    {
+      tema: z
+        .string()
+        .describe('Tema del ejercicio: "spec", "skill", "engram", "quality-gate"'),
+      nivel: z
+        .enum(["principiante", "intermedio", "avanzado"])
+        .default("principiante")
+        .describe("Nivel del alumno"),
+    },
+    async ({ tema, nivel }) => {
+      try {
+        const content = ejercicioPractico(tema, nivel);
+        return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "evaluar_respuesta",
+    "Evalúa la respuesta de un alumno a un ejercicio. Devuelve un framework de evaluación con feedback constructivo, nota, y siguiente paso recomendado.",
+    {
+      ejercicio: z.string().describe("Descripción del ejercicio que el alumno respondió"),
+      respuesta: z.string().describe("La respuesta del alumno (texto completo)"),
+      nivel: z
+        .enum(["principiante", "intermedio", "avanzado"])
+        .default("principiante")
+        .describe("Nivel del alumno"),
+    },
+    async ({ ejercicio, respuesta, nivel }) => {
+      try {
+        const content = evaluarRespuesta(ejercicio, respuesta, nivel);
         return { content: [{ type: "text", text: content }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };

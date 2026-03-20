@@ -12,7 +12,7 @@ Sistema de investigación técnica que mantiene documentación siempre actualiza
 
 **Sin RAG, sin vector DB** — búsqueda por keyword sobre archivos markdown.
 
-## Tools disponibles (12)
+## Tools disponibles (16)
 
 ### Lectura y búsqueda (6)
 
@@ -33,6 +33,15 @@ Sistema de investigación técnica que mantiene documentación siempre actualiza
 | `leer_metodologia` | Lee SDD-STACKOS, reglas universales o estándar de Engram |
 | `guia_aprendizaje` | Guía estructurada para alumnos (principiante/intermedio/avanzado) |
 
+### Pedagógicos (4)
+
+| Tool | Descripción |
+|------|-------------|
+| `modo_tutor` | Instrucciones que convierten al agente en tutor pedagógico |
+| `explicar_concepto` | Explica conceptos con analogía, ejemplo y verificación |
+| `ejercicio_practico` | Genera ejercicios por tema y nivel |
+| `evaluar_respuesta` | Evalúa respuesta del alumno con feedback constructivo |
+
 ### Escritura (3)
 
 | Tool | Descripción |
@@ -45,11 +54,26 @@ Sistema de investigación técnica que mantiene documentación siempre actualiza
 
 Si sos alumno y te compartieron este MCP, empezá así:
 
-1. **`guia_aprendizaje`** con nivel `"principiante"` — te da el roadmap completo
-2. **`leer_metodologia`** con `"sdd-stackos"` — la metodología que usamos
-3. **`listar_skills`** — para ver todas las automatizaciones disponibles
-4. **`leer_skill`** con `"wrap-up"` — tu primer skill (el más simple)
-5. **`buscar_evaluacion`** con cualquier herramienta — para ver cómo evaluamos tech
+1. **`modo_tutor`** — El agente se convierte en tu tutor pedagógico
+2. **`guia_aprendizaje`** con nivel `"principiante"` — te da el roadmap completo
+3. **`explicar_concepto`** con `"spec"` nivel `"principiante"` — tu primer concepto
+4. **`ejercicio_practico`** con `"spec"` nivel `"principiante"` — practica lo aprendido
+5. **`evaluar_respuesta`** — cuando termines el ejercicio, evaluá tu trabajo
+
+### Flujo de una sesión de aprendizaje
+
+```
+modo_tutor → guia_aprendizaje → explicar_concepto → ejercicio_practico → evaluar_respuesta
+     ↑                                                                          │
+     └──────────────────── siguiente concepto ←─────────────────────────────────┘
+```
+
+### Conceptos disponibles (con 3 niveles cada uno)
+- **spec** — Especificaciones y OpenSpec v2
+- **skill** — Skills y automatizaciones
+- **engram** — Sistema de memoria persistente
+- **quality-gate** — Quality gates y gobernanza
+- **lifecycle** — Ciclo de vida de un proyecto
 
 ### Resources (8)
 
