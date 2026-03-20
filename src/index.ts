@@ -21,6 +21,7 @@ import { modoTutor } from "./tools/modo-tutor.js";
 import { explicarConcepto } from "./tools/explicar-concepto.js";
 import { ejercicioPractico } from "./tools/ejercicio-practico.js";
 import { evaluarRespuesta } from "./tools/evaluar-respuesta.js";
+import { registrarProgreso, verProgreso } from "./tools/progreso-alumno.js";
 
 // Tools de escritura
 import { registrarLeccion } from "./tools/registrar-leccion.js";
@@ -274,6 +275,49 @@ async function main(): Promise<void> {
       try {
         const content = evaluarRespuesta(ejercicio, respuesta, nivel);
         return { content: [{ type: "text", text: content }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  // --- Tools de progreso del alumno ---
+
+  server.tool(
+    "registrar_progreso",
+    "Registra el progreso de un alumno. USARLO SIEMPRE: después de explicar un concepto, después de evaluar un ejercicio, al inicio de sesión, o para anotar observaciones. El sistema sube de nivel automáticamente.",
+    {
+      alumno: z.string().describe("Nombre del alumno"),
+      tema: z
+        .string()
+        .describe('Tema: "spec", "skill", "engram", "quality-gate", "lifecycle" o cualquier otro'),
+      tipo: z
+        .enum(["concepto_visto", "ejercicio_aprobado", "ejercicio_reprobado", "nota_tutor", "inicio_sesion"])
+        .describe("concepto_visto = explicó un concepto | ejercicio_aprobado/reprobado = resultado de ejercicio | nota_tutor = observación del tutor | inicio_sesion = nueva sesión"),
+      detalle: z
+        .string()
+        .describe('Qué se registra (ej: "analogía de la receta para spec", "entiende bien boundaries")'),
+    },
+    async ({ alumno, tema, tipo, detalle }) => {
+      try {
+        const result = registrarProgreso(root, alumno, tema, tipo, detalle);
+        return { content: [{ type: "text", text: result }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "ver_progreso",
+    "Muestra el progreso actual de un alumno: nivel por tema, ejercicios completados, notas del tutor y siguiente paso recomendado. USARLO AL INICIO DE CADA SESIÓN.",
+    {
+      alumno: z.string().describe("Nombre del alumno"),
+    },
+    async ({ alumno }) => {
+      try {
+        const result = verProgreso(root, alumno);
+        return { content: [{ type: "text", text: result }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
       }
