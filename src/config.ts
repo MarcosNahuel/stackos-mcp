@@ -1,7 +1,7 @@
 import { existsSync } from "fs";
 import { resolve } from "path";
 
-const DEFAULT_ROOT = "D:/OneDrive/GitHub/CONOCIMIENTO-NAHUEL";
+const DEFAULT_ROOT = "D:/Proyectos/CONOCIMIENTO-NAHUEL";
 
 export function getStackosRoot(): string {
   const root = process.env.STACKOS_ROOT || DEFAULT_ROOT;
