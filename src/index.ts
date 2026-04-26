@@ -28,6 +28,11 @@ import { registrarLeccion } from "./tools/registrar-leccion.js";
 import { agregarNota } from "./tools/agregar-nota.js";
 import { proponerEvaluacion } from "./tools/proponer-evaluacion.js";
 
+// Tools del sistema "yo" (copiloto operativo)
+import { yoListTasks } from "./tools/yo-list-tasks.js";
+import { yoAddTask } from "./tools/yo-add-task.js";
+import { yoCloseTask } from "./tools/yo-close-task.js";
+
 // Resources
 import { getResourceDefinitions, readResource } from "./resources/resolver.js";
 
@@ -379,6 +384,87 @@ async function main(): Promise<void> {
     async ({ herramienta, motivo, contexto }) => {
       try {
         const result = proponerEvaluacion(root, herramienta, motivo, contexto);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  // --- Tools del sistema "yo" ---
+
+  server.tool(
+    "yo_list_tasks",
+    "Lista tasks del sistema yo (copiloto operativo) con preview de content_md (200 chars) y age en segundos. Filtros opcionales: project, status, assigned_to. Order by created_at desc. Default limit=20.",
+    {
+      project: z
+        .string()
+        .optional()
+        .describe("Filtrar por project_slug (ej: traid-landing, gov-mendoza)"),
+      status: z
+        .enum(["pending", "in_progress", "done", "cancelled", "blocked"])
+        .optional()
+        .describe("Filtrar por status"),
+      assigned_to: z
+        .string()
+        .optional()
+        .describe("Filtrar por asignado (ej: nahuel, claude)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Límite de resultados (1-200, default 20)"),
+    },
+    async ({ project, status, assigned_to, limit }) => {
+      try {
+        const result = await yoListTasks({ project, status, assigned_to, limit });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_add_task",
+    "Crea una task nueva en el sistema yo desde Claude Code. Source='claude', metadata.created_via='mcp_claude_code'. Retorna el task_id.",
+    {
+      project: z.string().describe("project_slug (ej: traid-landing, sistema-yo)"),
+      content_md: z.string().describe("Contenido markdown de la task"),
+      priority: z
+        .enum(["low", "medium", "high", "urgent"])
+        .optional()
+        .describe("Prioridad (default medium)"),
+      assigned_to: z
+        .string()
+        .optional()
+        .describe("Asignado (ej: nahuel, claude). Default null."),
+    },
+    async ({ project, content_md, priority, assigned_to }) => {
+      try {
+        const result = await yoAddTask({ project, content_md, priority, assigned_to });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_close_task",
+    "Cierra una task del sistema yo: setea status=done, closed_at=NOW(). Si se pasa resolution, hace merge en metadata.resolution. Retorna {id, status, closed_at}.",
+    {
+      id: z.string().describe("UUID de la task a cerrar"),
+      resolution: z
+        .string()
+        .optional()
+        .describe("Texto opcional con la resolución/cómo se cerró. Se guarda en metadata.resolution."),
+    },
+    async ({ id, resolution }) => {
+      try {
+        const result = await yoCloseTask(id, resolution);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
