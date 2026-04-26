@@ -28,10 +28,18 @@ import { registrarLeccion } from "./tools/registrar-leccion.js";
 import { agregarNota } from "./tools/agregar-nota.js";
 import { proponerEvaluacion } from "./tools/proponer-evaluacion.js";
 
-// Tools del sistema "yo" (copiloto operativo)
+// Tools del sistema "yo" (copiloto operativo) — tasks
 import { yoListTasks } from "./tools/yo-list-tasks.js";
 import { yoAddTask } from "./tools/yo-add-task.js";
 import { yoCloseTask } from "./tools/yo-close-task.js";
+
+// Tools del sistema "yo" — memoria (Cycle 1)
+import { yoAgregarBorrador } from "./tools/yo-agregar-borrador.js";
+import { yoListarBorradores } from "./tools/yo-listar-borradores.js";
+import { yoDescartarBorrador } from "./tools/yo-descartar-borrador.js";
+import { yoStatus } from "./tools/yo-status.js";
+import { yoIntegrarBorrador } from "./tools/yo-integrar-borrador.js";
+import { yoLeerArchivo } from "./tools/yo-leer-archivo.js";
 
 // Resources
 import { getResourceDefinitions, readResource } from "./resources/resolver.js";
@@ -465,6 +473,176 @@ async function main(): Promise<void> {
     async ({ id, resolution }) => {
       try {
         const result = await yoCloseTask(id, resolution);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  // --- Tools del sistema "yo" — memoria (Cycle 1) ---
+
+  /**
+   * Helper: algunos bridges MCP (Claude Code antml, agentes via JSON-RPC sin
+   * type coercion) pasan parámetros de tipo array como JSON strings. Este
+   * preprocess intenta parsear strings y deja arrays/undefined como están.
+   */
+  const arrayCoerce = <T extends z.ZodTypeAny>(schema: T) =>
+    z.preprocess((val) => {
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          /* dejar pasar — Zod tirará el error correcto */
+        }
+      }
+      return val;
+    }, schema);
+
+  server.tool(
+    "yo_agregar_borrador",
+    "Crea un borrador (draft) en yo/drafts/ con frontmatter validado. Pasa el body por el redactor (Secretlint + patterns custom 2026: Anthropic/OpenAI/Vercel/Supabase/Google/GitHub/etc). Si detecta secretos: 1+ findings → flagged (yo/drafts/.flagged/), 2+ severidad alta → blocked (no escribe). Retorna draft_id, path, flagged, findings_count.",
+    {
+      title: z.string().min(3).max(120).describe("Título corto (3-120 chars), usado para el slug del archivo."),
+      body: z.string().min(1).describe("Contenido markdown del borrador (sin frontmatter)."),
+      kind: z
+        .enum(["pattern", "gotcha", "decision", "stack-update", "workflow", "insight"])
+        .describe("Tipo de memoria."),
+      scope: z.enum(["global", "project"]).describe("Alcance — global o por proyecto."),
+      project_slug: z
+        .string()
+        .optional()
+        .describe("Obligatorio si scope=project."),
+      importance: z
+        .enum(["low", "medium", "high"])
+        .optional()
+        .describe("Importancia (default medium)."),
+      confidence: z
+        .enum(["low", "medium", "high"])
+        .describe("Confianza."),
+      source_ref: arrayCoerce(
+        z
+          .array(
+            z.object({
+              type: z.enum(["session", "file", "url", "conversation"]),
+              ref: z.string().min(1),
+            })
+          )
+          .min(1)
+      ).describe(
+        "Referencias de origen (mínimo 1). Tipo + ref. Acepta array o JSON string serializado."
+      ),
+      tags: arrayCoerce(z.array(z.string()))
+        .optional()
+        .describe("Tags libres. Acepta array o JSON string serializado."),
+      session_id: z.string().min(1).describe("ID de la sesión que origina el draft."),
+      expires_at: z
+        .string()
+        .optional()
+        .describe("Fecha ISO8601 opcional para expiración."),
+      supersedes: arrayCoerce(z.array(z.string()))
+        .optional()
+        .describe("IDs/paths que este draft reemplaza."),
+    },
+    async (args) => {
+      try {
+        const result = await yoAgregarBorrador(root, {
+          ...args,
+          importance: args.importance ?? "medium",
+          tags: args.tags ?? [],
+        });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_listar_borradores",
+    "Lista borradores pendientes en yo/drafts/ (incluye .flagged/ por defecto). Retorna metadata + preview 200 chars + age. Filtros: scope, project_slug, kind, include_flagged, limit (1-500, default 50).",
+    {
+      scope: z.enum(["global", "project"]).optional(),
+      project_slug: z.string().optional(),
+      kind: z.string().optional(),
+      include_flagged: z.boolean().optional().describe("Incluir drafts flagged (default true)."),
+      limit: z.number().int().min(1).max(500).optional(),
+    },
+    async (args) => {
+      try {
+        const result = await yoListarBorradores(root, args);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_descartar_borrador",
+    "Mueve un borrador a yo/.archive/discarded/<año>/. No borra: archiva. Útil para drafts que ya no aplican o quedaron obsoletos.",
+    {
+      draft_id: z.string().describe("ID único del draft a descartar (ver yo_listar_borradores)."),
+      reason: z.string().optional().describe("Razón opcional del descarte (queda en audit)."),
+    },
+    async ({ draft_id, reason }) => {
+      try {
+        const result = await yoDescartarBorrador(root, { draft_id, reason });
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_status",
+    "Reporta estado agregado del sistema yo memoria: drafts pendientes, flagged, blocked, breakdown por kind/scope, archives integrated/discarded del año actual, redactor findings totales, path del audit log de hoy.",
+    {},
+    async () => {
+      try {
+        const result = await yoStatus(root);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_integrar_borrador",
+    'Integra un draft a su target en yo/. Action default = "proposal" (genera <target>.proposal.md SIN tocar el target original — revisión humana). Otras actions: "apply" (merge real con backup), "append" (append directo sin idempotencia), "replace" (sustituye target con body del draft), "discard" (archiva draft sin tocar target). Idempotencia: SHA-256 normalizado por párrafo (exact match, NO semántico). target_path opcional — si se omite, se infiere de scope/kind. Drafts FLAGGED no pueden aplicarse: usar discard o curar primero.',
+    {
+      draft_id: z.string().describe("ID del draft a integrar (ver yo_listar_borradores)."),
+      accion: z
+        .enum(["proposal", "apply", "append", "replace", "discard"])
+        .optional()
+        .describe('Default "proposal" (FIX M2 — no escribe directo). Usar "apply" para confirmar el merge.'),
+      target_path: z
+        .string()
+        .optional()
+        .describe("Path destino relativo al root (ej: yo/global/insights.md). Si se omite, se infiere de scope/kind del draft."),
+    },
+    async (args) => {
+      try {
+        const result = await yoIntegrarBorrador(root, args);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_leer_archivo",
+    "Lee un archivo de la knowledge base CN. Path con allowlist: yo/, content/, knowledge/, standards/, brands/, docs/, plan/, INDEX.md, CLAUDE.md, README.md. Bloquea: memory/, .claude/skills/, .claude/projects/, cockpit/, .env*. Si es .md, parsea frontmatter.",
+    {
+      path: z.string().describe("Path relativo al root del repo (ej: yo/global/insights.md, INDEX.md, content/topics/...)."),
+    },
+    async ({ path: p }) => {
+      try {
+        const result = await yoLeerArchivo(root, { path: p });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
