@@ -38,6 +38,8 @@ import { yoAgregarBorrador } from "./tools/yo-agregar-borrador.js";
 import { yoListarBorradores } from "./tools/yo-listar-borradores.js";
 import { yoDescartarBorrador } from "./tools/yo-descartar-borrador.js";
 import { yoStatus } from "./tools/yo-status.js";
+import { yoIntegrarBorrador } from "./tools/yo-integrar-borrador.js";
+import { yoLeerArchivo } from "./tools/yo-leer-archivo.js";
 
 // Resources
 import { getResourceDefinitions, readResource } from "./resources/resolver.js";
@@ -579,6 +581,46 @@ async function main(): Promise<void> {
     async () => {
       try {
         const result = await yoStatus(root);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_integrar_borrador",
+    'Integra un draft a su target en yo/. Action default = "proposal" (genera <target>.proposal.md SIN tocar el target original — revisión humana). Otras actions: "apply" (merge real con backup), "append" (append directo sin idempotencia), "replace" (sustituye target con body del draft), "discard" (archiva draft sin tocar target). Idempotencia: SHA-256 normalizado por párrafo (exact match, NO semántico). target_path opcional — si se omite, se infiere de scope/kind. Drafts FLAGGED no pueden aplicarse: usar discard o curar primero.',
+    {
+      draft_id: z.string().describe("ID del draft a integrar (ver yo_listar_borradores)."),
+      accion: z
+        .enum(["proposal", "apply", "append", "replace", "discard"])
+        .optional()
+        .describe('Default "proposal" (FIX M2 — no escribe directo). Usar "apply" para confirmar el merge.'),
+      target_path: z
+        .string()
+        .optional()
+        .describe("Path destino relativo al root (ej: yo/global/insights.md). Si se omite, se infiere de scope/kind del draft."),
+    },
+    async (args) => {
+      try {
+        const result = await yoIntegrarBorrador(root, args);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "yo_leer_archivo",
+    "Lee un archivo de la knowledge base CN. Path con allowlist: yo/, content/, knowledge/, standards/, brands/, docs/, plan/, INDEX.md, CLAUDE.md, README.md. Bloquea: memory/, .claude/skills/, .claude/projects/, cockpit/, .env*. Si es .md, parsea frontmatter.",
+    {
+      path: z.string().describe("Path relativo al root del repo (ej: yo/global/insights.md, INDEX.md, content/topics/...)."),
+    },
+    async ({ path: p }) => {
+      try {
+        const result = await yoLeerArchivo(root, { path: p });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (e) {
         return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
