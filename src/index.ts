@@ -482,6 +482,24 @@ async function main(): Promise<void> {
 
   // --- Tools del sistema "yo" — memoria (Cycle 1) ---
 
+  /**
+   * Helper: algunos bridges MCP (Claude Code antml, agentes via JSON-RPC sin
+   * type coercion) pasan parámetros de tipo array como JSON strings. Este
+   * preprocess intenta parsear strings y deja arrays/undefined como están.
+   */
+  const arrayCoerce = <T extends z.ZodTypeAny>(schema: T) =>
+    z.preprocess((val) => {
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          /* dejar pasar — Zod tirará el error correcto */
+        }
+      }
+      return val;
+    }, schema);
+
   server.tool(
     "yo_agregar_borrador",
     "Crea un borrador (draft) en yo/drafts/ con frontmatter validado. Pasa el body por el redactor (Secretlint + patterns custom 2026: Anthropic/OpenAI/Vercel/Supabase/Google/GitHub/etc). Si detecta secretos: 1+ findings → flagged (yo/drafts/.flagged/), 2+ severidad alta → blocked (no escribe). Retorna draft_id, path, flagged, findings_count.",
@@ -503,23 +521,27 @@ async function main(): Promise<void> {
       confidence: z
         .enum(["low", "medium", "high"])
         .describe("Confianza."),
-      source_ref: z
-        .array(
-          z.object({
-            type: z.enum(["session", "file", "url", "conversation"]),
-            ref: z.string().min(1),
-          })
-        )
-        .min(1)
-        .describe("Referencias de origen (mínimo 1). Tipo + ref."),
-      tags: z.array(z.string()).optional().describe("Tags libres."),
+      source_ref: arrayCoerce(
+        z
+          .array(
+            z.object({
+              type: z.enum(["session", "file", "url", "conversation"]),
+              ref: z.string().min(1),
+            })
+          )
+          .min(1)
+      ).describe(
+        "Referencias de origen (mínimo 1). Tipo + ref. Acepta array o JSON string serializado."
+      ),
+      tags: arrayCoerce(z.array(z.string()))
+        .optional()
+        .describe("Tags libres. Acepta array o JSON string serializado."),
       session_id: z.string().min(1).describe("ID de la sesión que origina el draft."),
       expires_at: z
         .string()
         .optional()
         .describe("Fecha ISO8601 opcional para expiración."),
-      supersedes: z
-        .array(z.string())
+      supersedes: arrayCoerce(z.array(z.string()))
         .optional()
         .describe("IDs/paths que este draft reemplaza."),
     },
