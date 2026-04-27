@@ -1,6 +1,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import { URL } from "url";
 import { getPort, getApiKey, getTransportMode, getWebhookToken, isWebhookAuthRequired } from "./config.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getYoSupabase } from "./utils/yo-supabase.js";
@@ -8,6 +9,7 @@ import { resolveProjectSlug } from "./yo/projects-resolver.js";
 import { buildFullBrief } from "./yo/brief.js";
 import { classifyMessage } from "./yo/classifier.js";
 import { validateBearer, logAuthAttempt, loadTokens } from "./auth.js";
+import { getTasksHandler } from "./yo/http-tasks.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveProjectForContact(supa: any, contactId: string): Promise<string | null> {
@@ -33,6 +35,10 @@ export async function startTransport(server: McpServer): Promise<void> {
   // Modo HTTP
   const port = getPort();
   const apiKey = getApiKey();
+
+  // Supabase client para endpoints yo/* (tasks handler)
+  const supa = getYoSupabase();
+  const tasksHandler = getTasksHandler(supa);
 
   const httpServer = createServer(
     async (req: IncomingMessage, res: ServerResponse) => {
@@ -70,6 +76,7 @@ export async function startTransport(server: McpServer): Promise<void> {
       // Resolver scope requerido por endpoint
       let requiredScope = "mcp:invoke";
       if (req.url?.startsWith("/yo/brief")) requiredScope = "tasks:read";
+      else if (req.url?.split("?")[0] === "/yo/tasks") requiredScope = "tasks:read";
       else if (req.url === "/mcp") requiredScope = "mcp:invoke";
 
       const ip =
@@ -94,6 +101,24 @@ export async function startTransport(server: McpServer): Promise<void> {
         }
       }
 
+      // GET /yo/tasks — lista tareas abiertas (para Stop hook)
+      if (req.method === "GET" && req.url?.split("?")[0] === "/yo/tasks") {
+        const parsed = new URL(req.url, `http://localhost:${port}`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fakeReq = { query: Object.fromEntries(parsed.searchParams.entries()) } as any;
+        const fakeRes = {
+          _status: 200,
+          status(code: number) { this._status = code; return this; },
+          json(body: unknown) {
+            res.writeHead(this._status, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(body));
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any;
+        await tasksHandler(fakeReq, fakeRes);
+        return;
+      }
+
       // /yo/brief — briefing denso para hook SessionStart.
       // format=md → markdown 5-8 líneas | format=json → objeto completo.
       // Slug resuelto por repo_basename desde yo.projects.
@@ -105,8 +130,8 @@ export async function startTransport(server: McpServer): Promise<void> {
           const limit = limitRaw ? Math.min(20, parseInt(limitRaw, 10)) : 5;
           const format = parsedUrl.searchParams.get("format") ?? "json";
 
-          const supa = getYoSupabase();
-          const slug = await resolveProjectSlug(projectHint, supa);
+          const briefSupa = getYoSupabase();
+          const slug = await resolveProjectSlug(projectHint, briefSupa);
 
           if (!slug) {
             res.writeHead(200, { "Content-Type": "application/json" });
@@ -114,7 +139,7 @@ export async function startTransport(server: McpServer): Promise<void> {
             return;
           }
 
-          const { markdown, data } = await buildFullBrief(supa, slug, limit);
+          const { markdown, data } = await buildFullBrief(briefSupa, slug, limit);
 
           if (format === "md") {
             res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
@@ -168,12 +193,12 @@ export async function startTransport(server: McpServer): Promise<void> {
         const projectSlug = (payload.project_slug ?? null) as string | null;
 
         try {
-          const supa = getYoSupabase();
+          const webhookSupa = getYoSupabase();
 
           // Check contact muted status
           let muted = false;
           if (contactId) {
-            const { data: contact } = await supa
+            const { data: contact } = await webhookSupa
               .from("contacts")
               .select("muted, is_personal")
               .or(`id.eq.${contactId},whatsapp_number.eq.${contactId}`)
@@ -186,13 +211,13 @@ export async function startTransport(server: McpServer): Promise<void> {
 
           // Determine project for task
           const resolvedSlug = projectSlug ?? (contactId
-            ? await resolveProjectForContact(supa, contactId)
+            ? await resolveProjectForContact(webhookSupa, contactId)
             : null) ?? "sistema-yo";
 
           // Insert task (always, unless muted)
           let taskId: string | null = null;
           if (!muted) {
-            const { data: task } = await supa
+            const { data: task } = await webhookSupa
               .from("tasks")
               .insert({
                 project_slug: resolvedSlug,
@@ -211,7 +236,7 @@ export async function startTransport(server: McpServer): Promise<void> {
           }
 
           // Save to classification_audit
-          await supa.from("classification_audit").insert({
+          await webhookSupa.from("classification_audit").insert({
             task_id: taskId,
             contact_id: contactId && !contactId.includes("+")
               ? contactId
@@ -267,6 +292,9 @@ export async function startTransport(server: McpServer): Promise<void> {
     console.error(`  POST /mcp  → mensajes MCP`);
     console.error(`  GET  /mcp  → SSE stream`);
     console.error(`  GET  /health → health check`);
+    console.error(`  GET  /yo/tasks → lista tareas abiertas`);
+    console.error(`  GET  /yo/brief → briefing SessionStart`);
+    console.error(`  POST /yo/webhook → mensajes WhatsApp`);
     if (apiKey) {
       console.error(`  Auth: Bearer token habilitado`);
     }
