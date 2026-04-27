@@ -1,4 +1,5 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySupabaseClient = import("@supabase/supabase-js").SupabaseClient<any, any, any>;
 
 /**
  * Resuelve project_slug desde un hint (basename del cwd).
@@ -8,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 export async function resolveProjectSlug(
   hint: string,
-  client: SupabaseClient,
+  client: AnySupabaseClient,
 ): Promise<string | null> {
   const normalized = (hint || "").trim().toLowerCase();
   if (!normalized) return null;

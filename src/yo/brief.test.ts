@@ -9,7 +9,7 @@ describe("buildBriefMarkdown", () => {
         { id: "t1", priority: "high", content_preview: "Revisar P7 playbook", age_hours: 4 },
         { id: "t2", priority: "medium", content_preview: "Update INDEX", age_hours: 12 },
       ],
-      blockers: [{ id: "b1", content_preview: "Esperando GCP IAM", age_hours: 36 }],
+      blockers: [{ id: "b1", priority: "high", content_preview: "Esperando GCP IAM", age_hours: 36 }],
       recent_wa: [{ from_name: "Nacho", text_preview: "Listo el deploy CRM", hours_ago: 2 }],
       memory_excerpt: "Session 4 done. Cycle 2c bloqueado por Dokploy.",
     });

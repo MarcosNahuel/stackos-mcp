@@ -3,7 +3,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { getPort, getApiKey, getTransportMode } from "./config.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { yoListTasks } from "./tools/yo-list-tasks.js";
+import { getYoSupabase } from "./utils/yo-supabase.js";
+import { resolveProjectSlug } from "./yo/projects-resolver.js";
+import { buildFullBrief } from "./yo/brief.js";
 import { validateBearer, logAuthAttempt, loadTokens } from "./auth.js";
 
 export async function startTransport(server: McpServer): Promise<void> {
@@ -80,26 +82,46 @@ export async function startTransport(server: McpServer): Promise<void> {
         }
       }
 
-      // /yo/brief — endpoint dedicado para hook SessionStart (FIX M5).
-      // El service_role queda SOLO server-side; el hook usa Bearer scope tasks:read.
+      // /yo/brief — briefing denso para hook SessionStart.
+      // format=md → markdown 5-8 líneas | format=json → objeto completo.
+      // Slug resuelto por repo_basename desde yo.projects.
       if (req.url?.startsWith("/yo/brief")) {
         try {
-          const url = new URL(req.url, `http://localhost:${port}`);
-          const project = url.searchParams.get("project") ?? undefined;
-          const limitRaw = url.searchParams.get("limit");
+          const parsedUrl = new URL(req.url, `http://localhost:${port}`);
+          const projectHint = parsedUrl.searchParams.get("project") ?? "";
+          const limitRaw = parsedUrl.searchParams.get("limit");
           const limit = limitRaw ? Math.min(20, parseInt(limitRaw, 10)) : 5;
-          const tasks = await yoListTasks({
-            project,
-            status: "pending",
-            limit,
-          });
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ project, count: tasks.length, tasks }));
+          const format = parsedUrl.searchParams.get("format") ?? "json";
+
+          const supa = getYoSupabase();
+          const slug = await resolveProjectSlug(projectHint, supa);
+
+          if (!slug) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ project: null, count: 0, tasks: [], markdown: "" }));
+            return;
+          }
+
+          const { markdown, data } = await buildFullBrief(supa, slug, limit);
+
+          if (format === "md") {
+            res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
+            res.end(markdown);
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              project: slug,
+              count: data.tasks.length,
+              tasks: data.tasks,
+              blockers: data.blockers,
+              recent_wa: data.recent_wa,
+              memory_excerpt: data.memory_excerpt,
+              markdown,
+            }));
+          }
         } catch (err) {
           res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({ error: (err as Error).message })
-          );
+          res.end(JSON.stringify({ error: (err as Error).message }));
         }
         return;
       }

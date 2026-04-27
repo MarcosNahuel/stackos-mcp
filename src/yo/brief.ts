@@ -25,14 +25,15 @@ function truncate(s: string, n: number = MAX_PREVIEW): string {
   return (s || "").slice(0, n);
 }
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnySupabaseClient = import("@supabase/supabase-js").SupabaseClient<any, any, any>;
 import { readFile } from "fs/promises";
 import { join } from "path";
 
 const STACKOS_ROOT = process.env.STACKOS_ROOT ?? process.env.DEFAULT_ROOT ?? "D:/Proyectos/CONOCIMIENTO-NAHUEL";
 
 export async function fetchBriefTasks(
-  client: SupabaseClient,
+  client: AnySupabaseClient,
   project: string,
   limit = 5,
 ): Promise<BriefTask[]> {
@@ -54,7 +55,7 @@ export async function fetchBriefTasks(
 }
 
 export async function fetchBriefBlockers(
-  client: SupabaseClient,
+  client: AnySupabaseClient,
   project: string,
 ): Promise<BriefTask[]> {
   const { data } = await (client as any)
@@ -74,7 +75,7 @@ export async function fetchBriefBlockers(
 }
 
 export async function fetchRecentWA(
-  client: SupabaseClient,
+  client: AnySupabaseClient,
   project: string,
   hoursWindow = 24,
 ): Promise<BriefWA[]> {
@@ -97,7 +98,7 @@ export async function fetchRecentWA(
 
 export async function fetchMemoryExcerpt(
   project: string,
-  client: SupabaseClient,
+  client: AnySupabaseClient,
   maxChars = 600,
 ): Promise<string | null> {
   const { data } = await (client as any)
@@ -123,7 +124,7 @@ export async function fetchMemoryExcerpt(
 }
 
 export async function buildFullBrief(
-  client: SupabaseClient,
+  client: AnySupabaseClient,
   project: string,
   limit = 5,
 ): Promise<{ markdown: string; data: BriefInput }> {
