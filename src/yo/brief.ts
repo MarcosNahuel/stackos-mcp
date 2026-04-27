@@ -25,6 +25,118 @@ function truncate(s: string, n: number = MAX_PREVIEW): string {
   return (s || "").slice(0, n);
 }
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { readFile } from "fs/promises";
+import { join } from "path";
+
+const STACKOS_ROOT = process.env.STACKOS_ROOT ?? process.env.DEFAULT_ROOT ?? "D:/Proyectos/CONOCIMIENTO-NAHUEL";
+
+export async function fetchBriefTasks(
+  client: SupabaseClient,
+  project: string,
+  limit = 5,
+): Promise<BriefTask[]> {
+  const { data } = await (client as any)
+    .from("tasks")
+    .select("id,priority,content_md,created_at,status")
+    .eq("project_slug", project)
+    .eq("status", "pending")
+    .order("priority", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  return ((data as any[]) ?? []).map((t) => ({
+    id: t.id,
+    priority: t.priority ?? "medium",
+    content_preview: ((t.content_md ?? "") as string).split("\n")[0] ?? "",
+    age_hours: Math.round((Date.now() - new Date(t.created_at).getTime()) / 3_600_000),
+  }));
+}
+
+export async function fetchBriefBlockers(
+  client: SupabaseClient,
+  project: string,
+): Promise<BriefTask[]> {
+  const { data } = await (client as any)
+    .from("tasks")
+    .select("id,priority,content_md,created_at")
+    .eq("project_slug", project)
+    .eq("status", "blocked")
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  return ((data as any[]) ?? []).map((t) => ({
+    id: t.id,
+    priority: t.priority ?? "medium",
+    content_preview: ((t.content_md ?? "") as string).split("\n")[0] ?? "",
+    age_hours: Math.round((Date.now() - new Date(t.created_at).getTime()) / 3_600_000),
+  }));
+}
+
+export async function fetchRecentWA(
+  client: SupabaseClient,
+  project: string,
+  hoursWindow = 24,
+): Promise<BriefWA[]> {
+  const since = new Date(Date.now() - hoursWindow * 3_600_000).toISOString();
+  const { data } = await (client as any)
+    .from("tasks")
+    .select("content_md,created_at,created_by_contact_id,contacts:created_by_contact_id(name)")
+    .eq("project_slug", project)
+    .eq("source", "whatsapp")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  return ((data as any[]) ?? []).map((t) => ({
+    from_name: (t.contacts as any)?.name ?? "WA",
+    text_preview: ((t.content_md ?? "") as string).split("\n")[0] ?? "",
+    hours_ago: Math.round((Date.now() - new Date(t.created_at).getTime()) / 3_600_000),
+  }));
+}
+
+export async function fetchMemoryExcerpt(
+  project: string,
+  client: SupabaseClient,
+  maxChars = 600,
+): Promise<string | null> {
+  const { data } = await (client as any)
+    .from("projects")
+    .select("memory_md_path")
+    .eq("slug", project)
+    .maybeSingle();
+
+  const relPath = (data as any)?.memory_md_path as string | undefined;
+  if (!relPath) return null;
+
+  try {
+    const full = join(STACKOS_ROOT, relPath);
+    const content = await readFile(full, "utf-8");
+    const paragraphs = content
+      .split(/\n\n+/)
+      .filter((p) => !p.startsWith("---") && !p.startsWith("#") && p.trim().length > 20);
+    const last = paragraphs.slice(-2).join(" ").replace(/\s+/g, " ").trim();
+    return last.slice(0, maxChars);
+  } catch {
+    return null;
+  }
+}
+
+export async function buildFullBrief(
+  client: SupabaseClient,
+  project: string,
+  limit = 5,
+): Promise<{ markdown: string; data: BriefInput }> {
+  const [tasks, blockers, recent_wa, memory_excerpt] = await Promise.all([
+    fetchBriefTasks(client, project, limit),
+    fetchBriefBlockers(client, project),
+    fetchRecentWA(client, project),
+    fetchMemoryExcerpt(project, client),
+  ]);
+  const data: BriefInput = { project, tasks, blockers, recent_wa, memory_excerpt };
+  return { markdown: buildBriefMarkdown(data), data };
+}
+
 export function buildBriefMarkdown(input: BriefInput): string {
   const lines: string[] = [];
   lines.push(`## yo · ${input.project}`);
