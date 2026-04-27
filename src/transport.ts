@@ -1,12 +1,24 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { getPort, getApiKey, getTransportMode } from "./config.js";
+import { getPort, getApiKey, getTransportMode, getWebhookToken, isWebhookAuthRequired } from "./config.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getYoSupabase } from "./utils/yo-supabase.js";
 import { resolveProjectSlug } from "./yo/projects-resolver.js";
 import { buildFullBrief } from "./yo/brief.js";
+import { classifyMessage } from "./yo/classifier.js";
 import { validateBearer, logAuthAttempt, loadTokens } from "./auth.js";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveProjectForContact(supa: any, contactId: string): Promise<string | null> {
+  const { data } = await supa
+    .from("contact_projects")
+    .select("project_slug")
+    .or(`contact_id.eq.${contactId}`)
+    .limit(1)
+    .maybeSingle();
+  return (data as { project_slug: string } | null)?.project_slug ?? null;
+}
 
 export async function startTransport(server: McpServer): Promise<void> {
   const mode = getTransportMode();
@@ -119,6 +131,113 @@ export async function startTransport(server: McpServer): Promise<void> {
               markdown,
             }));
           }
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
+        return;
+      }
+
+      // Webhook endpoint — recibe mensajes WA desde n8n
+      // Auth separada del sistema Bearer: usa X-Webhook-Token
+      if (req.url === "/yo/webhook" && req.method === "POST") {
+        if (isWebhookAuthRequired()) {
+          const expected = getWebhookToken();
+          const provided = req.headers["x-webhook-token"] as string | undefined;
+          if (!expected || provided !== expected) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Unauthorized", reason: "invalid_webhook_token" }));
+            return;
+          }
+        }
+
+        let body = "";
+        for await (const chunk of req) body += chunk;
+
+        let payload: Record<string, unknown>;
+        try {
+          payload = JSON.parse(body) as Record<string, unknown>;
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid JSON" }));
+          return;
+        }
+
+        const text = (payload.text ?? payload.message ?? payload.body ?? "") as string;
+        const contactId = (payload.contact_id ?? payload.from ?? null) as string | null;
+        const projectSlug = (payload.project_slug ?? null) as string | null;
+
+        try {
+          const supa = getYoSupabase();
+
+          // Check contact muted status
+          let muted = false;
+          if (contactId) {
+            const { data: contact } = await supa
+              .from("contacts")
+              .select("muted, is_personal")
+              .or(`id.eq.${contactId},whatsapp_number.eq.${contactId}`)
+              .maybeSingle();
+            muted = !!(contact?.muted || contact?.is_personal);
+          }
+
+          // Classify
+          const classification = await classifyMessage(text);
+
+          // Determine project for task
+          const resolvedSlug = projectSlug ?? (contactId
+            ? await resolveProjectForContact(supa, contactId)
+            : null) ?? "sistema-yo";
+
+          // Insert task (always, unless muted)
+          let taskId: string | null = null;
+          if (!muted) {
+            const { data: task } = await supa
+              .from("tasks")
+              .insert({
+                project_slug: resolvedSlug,
+                content_md: text.slice(0, 4000),
+                source: "whatsapp",
+                priority: classification.label === "urgent_task" && classification.confidence > 0.8
+                  ? "urgent"
+                  : "medium",
+                classification_confidence: classification.confidence,
+                task_type: classification.label,
+                metadata: { from: contactId, classifier: classification.model },
+              })
+              .select("id")
+              .single();
+            taskId = task?.id ?? null;
+          }
+
+          // Save to classification_audit
+          await supa.from("classification_audit").insert({
+            task_id: taskId,
+            contact_id: contactId && !contactId.includes("+")
+              ? contactId
+              : null,
+            source: "webhook",
+            input_excerpt: text.slice(0, 500),
+            candidates: classification.candidates,
+            model: classification.model,
+            decision_slug: classification.label,
+            confidence: classification.confidence,
+            fallback_used: classification.fallback_used,
+            latency_ms: classification.latency_ms,
+            error: classification.error,
+          });
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: true,
+            muted,
+            task_id: taskId,
+            classification: {
+              label: classification.label,
+              confidence: classification.confidence,
+              model: classification.model,
+            },
+          }));
         } catch (err) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: (err as Error).message }));

@@ -35,3 +35,15 @@ export function getPort(): number {
 export function getApiKey(): string | undefined {
   return process.env.STACKOS_API_KEY;
 }
+
+export function getWebhookToken(): string | undefined {
+  return process.env.SUPERYO_WEBHOOK_TOKEN;
+}
+
+export function isWebhookAuthRequired(): boolean {
+  return process.env.SUPERYO_WEBHOOK_REQUIRE_AUTH === "true";
+}
+
+export function getGeminiApiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY;
+}
