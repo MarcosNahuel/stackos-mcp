@@ -10,6 +10,7 @@ import { buildFullBrief } from "./yo/brief.js";
 import { classifyMessage } from "./yo/classifier.js";
 import { validateBearer, logAuthAttempt, loadTokens } from "./auth.js";
 import { getTasksHandler } from "./yo/http-tasks.js";
+import { sessionCloseHandler } from "./yo/session-close.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveProjectForContact(supa: any, contactId: string): Promise<string | null> {
@@ -36,9 +37,11 @@ export async function startTransport(server: McpServer): Promise<void> {
   const port = getPort();
   const apiKey = getApiKey();
 
-  // Supabase client para endpoints yo/* (tasks handler)
+  // Supabase client para endpoints yo/*
   const supa = getYoSupabase();
   const tasksHandler = getTasksHandler(supa);
+  const CN_PATH = process.env.CN_PATH || '/data';
+  const sessionCloseHandlerInstance = sessionCloseHandler(supa, CN_PATH);
 
   const httpServer = createServer(
     async (req: IncomingMessage, res: ServerResponse) => {
@@ -77,6 +80,7 @@ export async function startTransport(server: McpServer): Promise<void> {
       let requiredScope = "mcp:invoke";
       if (req.url?.startsWith("/yo/brief")) requiredScope = "tasks:read";
       else if (req.url?.split("?")[0] === "/yo/tasks") requiredScope = "tasks:read";
+      else if (req.url?.split("?")[0] === "/yo/session-close") requiredScope = "tasks:read";
       else if (req.url === "/mcp") requiredScope = "mcp:invoke";
 
       const ip =
@@ -116,6 +120,33 @@ export async function startTransport(server: McpServer): Promise<void> {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any;
         await tasksHandler(fakeReq, fakeRes);
+        return;
+      }
+
+      // POST /yo/session-close — marca tasks resueltos + genera draft
+      if (req.method === "POST" && req.url?.split("?")[0] === "/yo/session-close") {
+        let body = '';
+        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+        req.on('end', async () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const fakeReq = { body: parsed } as any;
+            const fakeRes = {
+              _status: 200,
+              status(code: number) { this._status = code; return this; },
+              json(responseBody: unknown) {
+                res.writeHead(this._status, { "Content-Type": "application/json" });
+                res.end(JSON.stringify(responseBody));
+              },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any;
+            await sessionCloseHandlerInstance(fakeReq, fakeRes);
+          } catch (e) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+          }
+        });
         return;
       }
 
@@ -293,6 +324,7 @@ export async function startTransport(server: McpServer): Promise<void> {
     console.error(`  GET  /mcp  → SSE stream`);
     console.error(`  GET  /health → health check`);
     console.error(`  GET  /yo/tasks → lista tareas abiertas`);
+    console.error(`  POST /yo/session-close → cierra sesion + draft`);
     console.error(`  GET  /yo/brief → briefing SessionStart`);
     console.error(`  POST /yo/webhook → mensajes WhatsApp`);
     if (apiKey) {
