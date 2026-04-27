@@ -13,6 +13,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
 RUN npm ci --omit=dev
 RUN mkdir -p /data
+# cache-bust: v2
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENV MCP_TRANSPORT=http
